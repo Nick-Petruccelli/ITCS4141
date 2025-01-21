@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/timeb.h>
+#include <pthread.h>
 
 /* read timer in second */
 double read_timer() {
@@ -39,13 +40,47 @@ void axpy_kernel(int N, REAL *Y, REAL *X, REAL a) {
 }
 
 /**
- * Your implementation of pthread version of axpy computation using look chunking and worksharing
+ * Your implementation of pthread version of axpy computation using loop chunking and worksharing
  * by dividing the total number of iterations amount the num_threads for parallel computing. 
  */
-void axpy_kernel_threading(int N, REAL *Y, REAL *X, REAL a, int num_threads) {
+
+struct axpy_input {
+    int start;
+    int end;
+    REAL *Y;
+    REAL *X;
+    REAL a;
+}typedef AxpyInput;
+
+void *axpy_threaded(void *in){
+    AxpyInput *input = (AxpyInput*)in;
+    int start = input->start;
+    int end = input->end;
+    REAL *Y = input->Y;
+    REAL *X = input->X;
+    REAL a = input->a;
     int i;
-    for (i = 0; i < N; ++i)
+    for (i = start; i < end; ++i){
         Y[i] += a * X[i];
+    }
+    return NULL;
+}
+
+void axpy_kernel_threading(int N, REAL *Y, REAL *X, REAL a, int num_threads) {
+    pthread_t threads[num_threads];
+    AxpyInput inputs[num_threads];
+    int i;
+    for(i=0; i<num_threads; i++){
+        inputs[i].start = i*(N/num_threads);
+        inputs[i].end = (i < num_threads-1) ? (i+1)*(N/num_threads) : N;
+        inputs[i].Y = Y;
+        inputs[i].X = X;
+        inputs[i].a = a;
+        pthread_create(&(threads[i]), NULL, axpy_threaded, &(inputs[i]));
+    }
+    for(int i=0; i<num_threads; i++){
+        pthread_join(threads[i], NULL);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -71,7 +106,7 @@ int main(int argc, char *argv[]) {
     elapsed = read_timer();
     for (i=0; i<num_runs; i++) axpy_kernel(N, Y, X, a);
     elapsed = (read_timer() - elapsed)/num_runs;
-    
+
     double elapsed2; /* for timing */
     elapsed2 = read_timer();
     for (i=0; i<num_runs; i++) axpy_kernel_threading(N, Y, X, a, num_threads);
